@@ -1,0 +1,16 @@
+Metric comparison summary
+J diagonal: [0.082  0.0845 0.1377]
+Quintic in tension metric: left
+Cubic metric: left
+
+quantity                                   Quintic in tension                Cubic ratio_2_over_1
+objective_u_cost_own_metric                1.152627088242e+00   1.386104798588e+00   1.202561359808e+00
+nominal_u_cost_physical_J                  1.152627088242e+00   1.386104798588e+00   1.202561359808e+00
+actual_u_cost_physical_J                   2.842889946352e+00   3.052842680033e+00   1.073851868220e+00
+tau_d_cost_J                               2.411148176847e-02   2.588000035143e-02   1.073347569426e+00
+tau_cost_J                                 7.855997840597e-03   7.751194989379e-03   9.866595111985e-01
+M_cost_J                                   1.468489523764e+00   1.665412341550e+00   1.134098891821e+00
+max_e_R_J                                  1.228504110321e-01   1.228504110321e-01   1.000000000000e+00
+max_e_Omega_J                              1.101680534456e-01   1.101680534456e-01   1.000000000000e+00
+max_u_d_left_J                             1.465570487580e+00   1.185371053241e+00   8.088120382377e-01
+max_u_actual_J                             5.282784297546e+00   5.285811438968e+00   1.000573020069e+00

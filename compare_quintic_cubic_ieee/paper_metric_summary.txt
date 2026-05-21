@@ -1,0 +1,15 @@
+Paper-focused metric summary
+J diagonal: [0.082  0.0845 0.1377]
+All norms are physical J-norms for body-coordinate quantities.
+Weighted L2 norm means sqrt(int_0^T ||.||_J^2 dt).
+
+Quintic in tension u L2_J: 2.384487343792e+00
+Quintic in tension M L2_J: 1.713761665906e+00
+Cubic u L2_J: 2.470968506490e+00
+Cubic M L2_J: 1.825054706879e+00
+Quintic in tension max e_R_J: 1.228504110321e-01
+Cubic max e_R_J: 1.228504110321e-01
+Quintic in tension max e_Omega_J: 1.101680534456e-01
+Cubic max e_Omega_J: 1.101680534456e-01
+Quintic in tension max e_tau_J: 2.607450231800e-01
+Cubic max e_tau_J: 2.697516999100e-01
