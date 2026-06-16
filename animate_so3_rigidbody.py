@@ -16,6 +16,7 @@ Outputs:
 
 Example:
     python animate_so3_rigidbody.py so3_quintic_120deg/simulation_results.npz --out attitude_video_quintic_120deg.mp4 --show-desired --fps 30
+    python animate_so3_rigidbody.py compare_cubic_quintic/Quintic_in_tension/simulation_results.npz --out attitude_video_rigid_quintic.mp4 --show-desired --fps 30
     python animate_so3_rigidbody.py so3_rigid_quintic_120deg/simulation_results.npz --out attitude_video_rigid_quintic_120deg.mp4 --show-desired --fps 30
     python animate_so3_rigidbody.py so3_sasaki_120deg/simulation_results.npz --out attitude_video_sasaki_120deg.mp4 --show-desired --fps 30
 
