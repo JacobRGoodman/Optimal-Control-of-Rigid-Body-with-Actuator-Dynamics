@@ -2,41 +2,9 @@
 """
 Simulate SO(3) attitude tracking with first-order torque actuation.
 
-VERSION: ieee-two-figure-2026-05-20
-
-Additions relative to the earlier tracking script
--------------------------------------------------
-1) Metric-weighted diagnostics:
-       ||e_R||_J, ||grad_J Psi||_J, ||e_Omega||_J,
-       ||tau||_J, ||tau_d||_J, ||M||_J, ||u||_J.
-
-2) Nominal optimal-control diagnostics for the desired trajectory:
-       u_d^{bi}   = ddotOmega_d + 1/2 Omega_d x dotOmega_d,
-       u_d^{left} = D_t^J A_d, where
-                    A_d = dotOmega_d + Gamma_J(Omega_d, Omega_d).
-
-   The left-invariant physical norm is ||u||_J = sqrt(u^T J u).
-   Torque, torque-rate, and actuator-command diagnostics are plotted with the physical J-norm by convention.
-
-3) Optional two-trajectory comparison mode. The curves for both nominal
-   trajectories are placed on the same comparison plots.
-
-Example
---------
-
-Compare Riemannian cubics and Riemannian quintic in tension:
-
-    python simulate_so3_actuated_tracking.py `
-  desired_rigid_quintic_natural.npz `
-  --trajectory2 desired_rigid_cubic.npz `
-  --label1 "Quintic in tension" `
-  --label2 "Cubic" `
-  --traj1-metric left `
-  --traj2-metric left `
-  --out compare_quintic_cubic_ieee `
-  --R0-rotvec-deg 0 25 0 `
-  --Omega0-offset 0.3 -0.2 0.1 `
-  --tau0-mode zero
+The script loads one or two nominal desired trajectories, integrates the
+closed-loop rigid-body dynamics, saves simulation results, and produces
+tracking, control, and metric-weighted diagnostic figures.
 """
 
 from __future__ import annotations
@@ -52,11 +20,9 @@ import matplotlib.pyplot as plt
 from scipy.interpolate import CubicSpline
 from scipy.spatial.transform import Rotation, Slerp
 
-# ============================================================
-# 1) Constants
-# ============================================================
+# Constants
 
-J = np.diag([0.082, 0.0845, 0.1377])  # inertia tensor
+J = np.diag([0.082, 0.0845, 0.1377])
 Jinv = np.diag([1 / 0.082, 1 / 0.0845, 1 / 0.1377])
 
 
@@ -72,9 +38,7 @@ def set_inertia(diagonal_entries: np.ndarray | None) -> None:
     Jinv = np.diag(1.0 / vals)
 
 
-# ============================================================
-# 2) Linear algebra helpers
-# ============================================================
+# Linear algebra helpers
 
 
 def vee(A: np.ndarray) -> np.ndarray:
@@ -174,15 +138,13 @@ def attitude_errors(
 ) -> Tuple[np.ndarray, np.ndarray, float]:
     """Return (e_R, e_Omega, Psi)."""
     Q = R.T @ Rd
-    e_R = 0.5 * vee(Q.T - Q)  # equivalent to 0.5 vee(Rd^T R - R^T Rd)
+    e_R = 0.5 * vee(Q.T - Q)
     e_Omega = Omega - Q @ Omegad
     Psi = 0.5 * np.trace(np.eye(3) - Rd.T @ R)
     return e_R, e_Omega, float(Psi)
 
 
-# ============================================================
-# 3) Desired trajectory interpolation and nominal u diagnostics
-# ============================================================
+# Desired trajectory interpolation and diagnostics
 
 
 def _first_key(data: np.lib.npyio.NpzFile, keys: Tuple[str, ...]) -> str:
@@ -299,9 +261,7 @@ def nominal_cov_accel_left(Omega: np.ndarray, dOmega: np.ndarray) -> np.ndarray:
     return np.asarray(dOmega, dtype=float).reshape(3) + Gamma_J(Omega, Omega)
 
 
-# ============================================================
-# 4) Control design
-# ============================================================
+# Control design
 
 
 @dataclass
@@ -403,24 +363,19 @@ def rhs(
     tau_d, tau_d_dot, aux = lee_tau_d_and_dot(t, R, Omega, tau, traj, params)
     e_tau = tau - tau_d
 
-    # First-order actuator feedback. Without saturation, this implies
-    # tau_dot = tau_d_dot - k_tau e_tau.
     M_unsat = (tau + params.C * tau_d_dot - params.C * params.k_tau * e_tau) / params.K
     M = saturate_vector(M_unsat, params.M_max)
 
     tau_dot = (params.K * M - tau) / params.C
     Omega_dot = np.asarray(aux["Omega_dot"], dtype=float)
 
-    # Induced triple-integrator input in the left-trivialized covariant model.
     u = LC_Lie(Omega, Jinv @ tau, Jinv @ tau_dot)
 
     aux.update({"M": M, "M_unsat": M_unsat, "e_tau": e_tau, "tau_dot": tau_dot, "u": u})
     return Omega_dot, tau_dot, aux
 
 
-# ============================================================
-# 5) Lie-group integration
-# ============================================================
+# Lie-group integration
 
 
 def lie_rk4_step(
@@ -459,8 +414,6 @@ def lie_rk4_step(
     Omega_next = Omega + (h / 6.0) * (k1_Om + 2.0 * k2_Om + 2.0 * k3_Om + k4_Om)
     tau_next = tau + (h / 6.0) * (k1_tau + 2.0 * k2_tau + 2.0 * k3_tau + k4_tau)
 
-    # Product-of-exponentials reconstruction. This is group preserving; the
-    # final projection only removes accumulated floating-point drift.
     R_next = (
         R
         @ so3_exp((h / 6.0) * Om1)
@@ -504,9 +457,6 @@ def simulate(
     Rd0, Omd0, _, _ = traj.eval(traj.t0)
     R = project_to_so3(Rd0 if R0 is None else R0)
 
-    # If R0 is perturbed but Omega0 is not specified, initialize the actual
-    # angular velocity as the transported desired angular velocity. This gives
-    # e_Omega(0)=0 while preserving the chosen attitude error.
     if Omega0 is None:
         Omega = R.T @ Rd0 @ Omd0
     else:
@@ -594,9 +544,7 @@ def simulate(
     return results
 
 
-# ============================================================
-# 6) Diagnostics, plotting, and saving
-# ============================================================
+# Diagnostics, plotting, and saving
 
 
 def add_metric_diagnostics(results: Dict[str, np.ndarray]) -> None:
@@ -610,12 +558,8 @@ def add_metric_diagnostics(results: Dict[str, np.ndarray]) -> None:
     This matches the convention in which these quantities are treated as
     left-trivialized Lie-algebra vectors after the R^3 identification.
     """
-    # Tracking errors.
     results["e_R_norm"] = np.linalg.norm(results["e_R"], axis=1)
     results["e_R_J_norm"] = weighted_norm(results["e_R"], J)
-    # If e_R is interpreted as dPsi under the Euclidean pairing, then the
-    # J-gradient is J^{-1}e_R and its J-norm equals sqrt(e_R^T J^{-1} e_R).
-    # Kept as an optional diagnostic, but not used in the main comparison plots.
     results["gradPsi_J_norm"] = weighted_norm(results["e_R"], Jinv)
 
     results["e_Omega_norm"] = np.linalg.norm(results["e_Omega"], axis=1)
@@ -624,7 +568,6 @@ def add_metric_diagnostics(results: Dict[str, np.ndarray]) -> None:
     results["e_tau_norm"] = np.linalg.norm(results["e_tau"], axis=1)
     results["e_tau_J_norm"] = weighted_norm(results["e_tau"], J)
 
-    # Torque/actuator variables, all plotted in the physical J-norm by convention.
     results["tau_norm"] = np.linalg.norm(results["tau"], axis=1)
     results["tau_J_norm"] = weighted_norm(results["tau"], J)
     results["tau_d_norm"] = np.linalg.norm(results["tau_d"], axis=1)
@@ -637,7 +580,6 @@ def add_metric_diagnostics(results: Dict[str, np.ndarray]) -> None:
     results["M_norm"] = np.linalg.norm(results["M"], axis=1)
     results["M_J_norm"] = weighted_norm(results["M"], J)
 
-    # Induced higher-order input and nominal trajectory diagnostics.
     results["u_norm"] = np.linalg.norm(results["u"], axis=1)
     results["u_J_norm"] = weighted_norm(results["u"], J)
     results["u_d_bi_norm"] = np.linalg.norm(results["u_d_bi"], axis=1)
@@ -664,7 +606,6 @@ def plot_body_axes_on_sphere(results: Dict[str, np.ndarray], outdir: Path, every
     fig = plt.figure(figsize=(8, 7))
     ax = fig.add_subplot(111, projection="3d")
 
-    # Unit sphere wireframe.
     u_grid = np.linspace(0, 2 * np.pi, 60)
     v_grid = np.linspace(0, np.pi, 30)
     xs = np.outer(np.cos(u_grid), np.sin(v_grid))
@@ -991,7 +932,6 @@ def plot_paper_single(results: Dict[str, np.ndarray], outdir: Path, label: str =
     outdir.mkdir(parents=True, exist_ok=True)
     t = results["t"]
 
-    # Plot 1: Tracking errors.
     fig, ax = plt.subplots(figsize=(7.0, 3.8))
     ax.plot(t, results["e_R_J_norm"], label=rf"{label}: $\|e_R\|_J$")
     ax.plot(t, results["e_Omega_J_norm"], label=rf"{label}: $\|e_\Omega\|_J$")
@@ -1002,7 +942,6 @@ def plot_paper_single(results: Dict[str, np.ndarray], outdir: Path, label: str =
     ax.legend(fontsize=8)
     save_figure_all_formats(fig, outdir, "paper_plot1_tracking_errors")
 
-    # Plot 2: cumulative weighted L2 norms of actual induced input u and actuator command M.
     L2u = cumulative_l2_norm(t, results["u_J_norm"])
     L2M = cumulative_l2_norm(t, results["M_J_norm"])
     fig, ax = plt.subplots(figsize=(7.0, 3.8))
@@ -1045,7 +984,6 @@ def plot_paper_comparison(
     t1 = results1["t"]
     t2 = results2["t"]
 
-    # Plot 1: all tracking errors, all with physical J-norm, on the same plot.
     fig, ax = plt.subplots(figsize=(7.2, 4.0))
     ax.plot(t1, results1["e_R_J_norm"], label=rf"{label1}: $\|e_R\|_J$")
     ax.plot(t1, results1["e_Omega_J_norm"], label=rf"{label1}: $\|e_\Omega\|_J$")
@@ -1059,7 +997,6 @@ def plot_paper_comparison(
     ax.legend(fontsize=7, ncol=2)
     save_figure_all_formats(fig, outdir, "paper_plot1_tracking_errors")
 
-    # Plot 2: cumulative weighted L2 norms of actual induced input u and actuator command M.
     L2u1 = cumulative_l2_norm(t1, results1["u_J_norm"])
     L2M1 = cumulative_l2_norm(t1, results1["M_J_norm"])
     L2u2 = cumulative_l2_norm(t2, results2["u_J_norm"])
@@ -1096,9 +1033,7 @@ def plot_paper_comparison(
     (outdir / "paper_metric_summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-# ============================================================
-# 7) CLI
-# ============================================================
+# Command-line interface
 
 
 def parse_vec3(values) -> np.ndarray | None:
@@ -1134,7 +1069,6 @@ def build_initial_conditions(args, traj: DesiredTrajectory, params: ControlParam
     if args.Omega0 is not None:
         Omega0 = parse_vec3(args.Omega0)
     elif args.Omega0_offset is not None:
-        # The offset is exactly e_Omega(0).
         Omega0 = R_for_init.T @ Rd0 @ Omd0 + parse_vec3(args.Omega0_offset)
 
     Omega_for_tau = R_for_init.T @ Rd0 @ Omd0 if Omega0 is None else Omega0

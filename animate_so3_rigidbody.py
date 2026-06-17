@@ -2,34 +2,12 @@
 """
 Animate SO(3) attitude trajectories as a rotating rectangular prism.
 
-The body is drawn as a rectangular prism centered at the origin. A fixed
-body-frame reference vector b_body can be attached to the body; by default
-b_body = e3, so the inertial-space vector is b(t) = R(t) e3.
-
-Accepted input .npz files:
-- desired trajectory files with keys: t, R_d, Omega_d, dotOmega_d, ddotOmega_d
-- simulation result files with keys that include: t, R, ... and optionally R_d
-
-Outputs:
-- MP4 if ffmpeg is available
-- otherwise GIF via pillow
-
-Example:
-    python animate_so3_rigidbody.py so3_quintic_120deg/simulation_results.npz --out attitude_video_quintic_120deg.mp4 --show-desired --fps 30
-    python animate_so3_rigidbody.py compare_cubic_quintic/Quintic_in_tension/simulation_results.npz --out attitude_video_rigid_quintic.mp4 --show-desired --fps 30
-    python animate_so3_rigidbody.py so3_rigid_quintic_120deg/simulation_results.npz --out attitude_video_rigid_quintic_120deg.mp4 --show-desired --fps 30
-    python animate_so3_rigidbody.py so3_sasaki_120deg/simulation_results.npz --out attitude_video_sasaki_120deg.mp4 --show-desired --fps 30
-
-    python animate_so3_rigidbody.py so3_quintic_endpoint_spin/simulation_results.npz --out attitude_video_quintic_endpoint_spin.mp4 --show-desired --fps 30
-    python animate_so3_rigidbody.py so3_rigid_quintic_endpoint_spin/simulation_results.npz --out attitude_video_rigid_quintic_endpoint_spin.mp4 --show-desired --fps 30
-    python animate_so3_rigidbody.py so3_sasaki_endpoint_spin/simulation_results.npz --out attitude_video_sasaki_endpoint_spin.mp4 --show-desired --fps 30
-
-    python animate_so3_rigidbody.py so3_quintic_nonzero_spin_and_acceleration/simulation_results.npz --out attitude_video_quintic_nonzero_spin_and_acceleration.mp4 --show-desired --fps 30
-    python animate_so3_rigidbody.py so3_rigid_quintic_nonzero_spin_and_acceleration/simulation_results.npz --out attitude_video_rigid_quintic_nonzero_spin_and_acceleration.mp4 --show-desired --fps 30
+The input is an .npz trajectory or simulation-result file containing ``t`` and
+one of ``R`` or ``R_d``. Simulation result files may also include ``R_d`` for an
+optional desired-attitude overlay.
 """
 
 import argparse
-import os
 from pathlib import Path
 import shutil
 
@@ -37,21 +15,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-
-
-def hat(x):
-    x = np.asarray(x, dtype=float).reshape(3)
-    return np.array([[0.0, -x[2], x[1]], [x[2], 0.0, -x[0]], [-x[1], x[0], 0.0]])
-
-
-def rot_from_axis_angle(rotvec):
-    rotvec = np.asarray(rotvec, dtype=float).reshape(3)
-    theta = np.linalg.norm(rotvec)
-    if theta < 1e-14:
-        return np.eye(3)
-    k = rotvec / theta
-    K = hat(k)
-    return np.eye(3) + np.sin(theta) * K + (1.0 - np.cos(theta)) * (K @ K)
 
 
 def load_attitude_data(path):
@@ -193,7 +156,6 @@ def main():
     ax.set_ylabel('inertial $e_2$')
     ax.set_zlabel('inertial $e_3$')
 
-    # Light unit sphere wireframe for orientation context.
     uu = np.linspace(0, 2*np.pi, 40)
     vv = np.linspace(0, np.pi, 20)
     xs = np.outer(np.cos(uu), np.sin(vv))
@@ -201,7 +163,6 @@ def main():
     zs = np.outer(np.ones_like(uu), np.cos(vv))
     ax.plot_wireframe(xs, ys, zs, rstride=2, cstride=2, linewidth=0.4, alpha=0.12)
 
-    # Inertial frame arrows.
     axis_len = 1.1
     ax.quiver(0, 0, 0, axis_len, 0, 0, arrow_length_ratio=0.08, linewidth=1.2)
     ax.quiver(0, 0, 0, 0, axis_len, 0, arrow_length_ratio=0.08, linewidth=1.2)
@@ -210,7 +171,6 @@ def main():
     ax.text(0, axis_len + 0.05, 0, '$e_2$')
     ax.text(0, 0, axis_len + 0.05, '$e_3$')
 
-    # Initial actual prism.
     faces_now, _ = rotated_faces(vertices, faces, R_plot[0])
     prism = Poly3DCollection(faces_now, alpha=args.body_alpha, facecolor='tab:blue', edgecolor='k', linewidths=0.8)
     ax.add_collection3d(prism)
@@ -221,7 +181,6 @@ def main():
         desired_prism = Poly3DCollection(faces_des, alpha=args.desired_alpha, facecolor='tab:orange', edgecolor='tab:orange', linewidths=0.7)
         ax.add_collection3d(desired_prism)
 
-    # Body-frame reference vector b(t) = R b_body.
     b0 = args.vector_scale * (R_plot[0] @ b_body)
     b_line, = ax.plot([0, b0[0]], [0, b0[1]], [0, b0[2]], linewidth=3.0, color='tab:red', label='$b(t)=R b_{body}$')
     b_tip, = ax.plot([b0[0]], [b0[1]], [b0[2]], marker='o', color='tab:red')

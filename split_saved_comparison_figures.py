@@ -1,30 +1,9 @@
 #!/usr/bin/env python3
 """
-Split the combined comparison figures emitted by the SO(3) simulation code
-into one PNG file per subplot.
+Split combined SO(3) comparison figures into one PNG per subplot.
 
-This is deliberately independent of the simulation code. Run it on an output
-folder that already contains
-
-    control_comparison_weighted.png
-    control_and_error_comparison_extra.png
-
-Example, from PowerShell:
-
-    python split_saved_comparison_figures.py compare_bi_left_nonzero_spin_accel
-
-It will create files such as
-
-    control_comparison_weighted_panel_1_nominal_u_own_objective_norm.png
-    control_comparison_weighted_panel_2_nominal_u_physical_J_norm.png
-    control_comparison_weighted_panel_3_actual_u_physical_J_norm.png
-    control_comparison_weighted_panel_4_torque_dual_norms.png
-
-and
-
-    control_and_error_comparison_extra_panel_1_actuator_command_M_norm.png
-    control_and_error_comparison_extra_panel_2_desired_torque_rate_dual_norm.png
-    control_and_error_comparison_extra_panel_3_tracking_errors_metric_weighted.png
+The input folder must contain ``control_comparison_weighted.png`` and
+``control_and_error_comparison_extra.png``.
 """
 
 from __future__ import annotations
@@ -77,7 +56,6 @@ def crop_grid(
             right = int(round((c + 1) * cell_w))
             lower = int(round((r + 1) * cell_h))
 
-            # Optional small trim to remove duplicated whitespace at internal cuts.
             l2 = left + (trim_px if c > 0 else 0)
             u2 = upper + (trim_px if r > 0 else 0)
             r2 = right - (trim_px if c < cols - 1 else 0)

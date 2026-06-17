@@ -1,95 +1,17 @@
 #!/usr/bin/env python3
 """
-Generate nominal SO(3) desired trajectories for the attitude-tracking simulation.
+Generate nominal SO(3) desired trajectories for attitude-tracking simulations.
 
-This script solves one of two boundary-value problems and writes an .npz file
-with keys expected by simulate_so3_actuated_tracking.py:
+The script solves boundary-value problems for the supported trajectory models
+and writes an .npz file with the keys expected by
+``simulate_so3_actuated_tracking.py``:
 
     t, R_d, Omega_d, dotOmega_d, ddotOmega_d
 
-Methods
--------
-1. sasaki
-   Geodesics of the generalized Sasaki metric on T^(2)SO(3), written in
-   left-trivialized coordinates (R, eta, zeta, Omega, Lambda, Upsilon).
-
-2. quintic
-   The earlier bi-invariant/SO(3)-cross-product quintic-in-tension model,
-   retained for backward compatibility.
-
-3. rigid-quintic
-   Riemannian quintics in tension for the left-invariant rigid-body metric
-   with inertia tensor J.  The state is
-
-       (rho, Omega0, Omega1, Omega2, Omega3, Omega4),
-
-   where Omega_alpha = (R^T nabla_{Rdot}^alpha Rdot)^vee.
-
-4. rigid-cubic
-   Riemannian cubics for the left-invariant rigid-body metric with inertia
-   tensor J. The state is
-
-       (rho, Omega0, Omega1, Omega2),
-
-   and only endpoint attitude and angular velocity are enforced.
-
-5. rigid-quintic-natural
-   Riemannian quintics in tension for the left-invariant rigid-body metric
-   with attitude and angular-velocity endpoints fixed, endpoint covariant
-   accelerations free, and natural boundary conditions
-
-       Omega2(0) = 0, Omega2(T) = 0.
-
-Implementation note
--------------------
-SciPy's solve_bvp works in Euclidean coordinates, so we solve for
-rho(t) = Log(R0^T R(t)) in a local SO(3) chart. The reconstruction is
-R(t) = R0 Exp(rho(t)). This is robust for rotations that remain away from
-the log-chart cut locus (rotation angle close to pi). For larger maneuvers,
-use an intermediate waypoint or a better initial guess.
-
-Boundary JSON format
---------------------
-{
-  "T": 5.0,
-  "N": 1001,
-  "R0": [[1,0,0],[0,1,0],[0,0,1]],
-  "R1_rotvec": [0, 0, 1.5707963267948966],
-  "Omega0": [0, 0, 0],
-  "Omega1": [0, 0, 0],
-  "dotOmega0": [0, 0, 0],
-  "dotOmega1": [0, 0, 0]
-}
-
-You may specify R1 as a matrix using "R1"/"Rf"/"RT", or as a rotation
-vector using "R1_rotvec". The same is supported for R0.
-
-For --method sasaki, --sasaki-bc fiber enforces endpoint data in
-T^(2)SO(3): R, eta, zeta. When eta/zeta are not explicitly supplied,
-Omega/dotOmega are used as their endpoint values. Use --sasaki-bc projected
-to instead enforce projected boundary data R, Omega, dotOmega at both
-endpoints; this nonlinear BVP can be less well conditioned.
-
-
-python generate_nominal_so3_trajectory.py `
-  --bc bc_nonzero_spin_and_acceleration.json `
-  --method rigid-quintic-natural `
-  --eps1 0.01 `
-  --eps2 0.5 `
-  --out desired_rigid_quintic_natural.npz `
-  --nodes 100 `
-  --tol 1e-3 `
-  --max-nodes 50000 `
-  --plot
-
-
-  python generate_nominal_so3_trajectory.py `
-  --bc bc_nonzero_spin_and_acceleration.json `
-  --method rigid-cubic `
-  --out desired_rigid_cubic.npz `
-  --nodes 60 `
-  --tol 1e-4 `
-  --plot
+Supported methods are ``sasaki``, ``quintic``, ``rigid-quintic``,
+``rigid-quintic-natural``, and ``rigid-cubic``. Boundary data are supplied as
+JSON using endpoint attitude, angular velocity, and, where applicable, angular
+acceleration or covariant acceleration.
 """
 
 from __future__ import annotations
@@ -106,9 +28,7 @@ from scipy.integrate import solve_bvp
 SCRIPT_VERSION = "2026-05-19-rigid-cubic-natural-quintic"
 
 
-# ============================================================
-# 1) SO(3) linear algebra helpers
-# ============================================================
+# SO(3) linear algebra
 
 
 def hat(x: np.ndarray) -> np.ndarray:
@@ -145,8 +65,7 @@ def so3_log(R: np.ndarray) -> np.ndarray:
     if th < 1e-10:
         return 0.5 * vee(R - R.T)
     if np.pi - th < 1e-7:
-        # Numerically stable enough for a warning-level near-pi case.
-        # Prefer not to use this chart close to pi for BVP solving.
+        # The log chart is ill-conditioned near angle pi.
         eigvals, eigvecs = np.linalg.eig(R)
         idx = int(np.argmin(np.abs(eigvals - 1.0)))
         axis = np.real(eigvecs[:, idx])
@@ -205,9 +124,7 @@ def normalize_rotation(R: np.ndarray) -> np.ndarray:
     return Rn
 
 
-# ============================================================
-# 2) Boundary data and initial guesses
-# ============================================================
+# Boundary data and initial guesses
 
 
 @dataclass
@@ -265,7 +182,6 @@ def vec3(x: Iterable[float], name: str) -> np.ndarray:
 
 
 def rotation_from_bc(data: Dict, prefix: str, default: np.ndarray | None = None) -> np.ndarray:
-    # prefix examples: "R0", "R1". Also supports Rf/RT as aliases for R1.
     aliases = [prefix]
     if prefix == "R1":
         aliases += ["Rf", "RT"]
@@ -284,7 +200,6 @@ def rotation_from_bc(data: Dict, prefix: str, default: np.ndarray | None = None)
 
 def load_boundary_data(path: str | None) -> BoundaryData:
     if path is None:
-        # Demo: rest-to-rest yaw of 90 degrees in 5 seconds.
         return BoundaryData(
             T=5.0,
             N=1001,
@@ -375,7 +290,6 @@ def initial_guess_common(bc: BoundaryData, t: np.ndarray) -> Tuple[np.ndarray, n
     rho_f = so3_log(bc.R0.T @ bc.R1)
     rho_dot0 = bc.Omega0
     rho_dotT = right_jacobian_inv(rho_f) @ bc.Omega1
-    # This ignores d/dt J_r^{-1}; it is only an initial guess for solve_bvp.
     rho_ddot0 = bc.dotOmega0
     rho_ddotT = bc.dotOmega1
     coeff = quintic_coefficients(
@@ -418,9 +332,7 @@ def make_sasaki_guess(bc: BoundaryData, t: np.ndarray) -> np.ndarray:
     return np.vstack([rho, eta, zeta, Omega, Lambda, Upsilon])
 
 
-# ============================================================
-# 3) Differential equations for the two BVPs
-# ============================================================
+# Differential equations
 
 
 def sasaki_omega_dot_cols(eta, zeta, Omega, Lambda, Upsilon):
@@ -489,9 +401,7 @@ def rhs_quintic(t: np.ndarray, y: np.ndarray) -> np.ndarray:
     return dy
 
 
-# ============================================================
-# 3b) Left-invariant rigid-body metric quintics in tension
-# ============================================================
+# Left-invariant rigid-body metric quintics
 
 
 def make_inertia(J_diag: Iterable[float]) -> Tuple[np.ndarray, np.ndarray]:
@@ -508,7 +418,7 @@ def make_inertia(J_diag: Iterable[float]) -> Tuple[np.ndarray, np.ndarray]:
 def rigid_connection_cols(xi: np.ndarray, eta: np.ndarray, J: np.ndarray, Jinv: np.ndarray) -> np.ndarray:
     """Left-trivialized Levi-Civita connection for the rigid-body metric.
 
-    Implements the convention supplied in the prompt:
+    Uses the rigid-body metric convention
 
         nabla_xi eta = 1/2 * (xi x eta - J^{-1}(J xi x eta + J eta x xi)).
 
@@ -720,7 +630,6 @@ def package_rigid_quintic_solution(sol, bc: BoundaryData, N: int, J: np.ndarray,
     W3 = y[12:15]
     W4 = y[15:18]
 
-    # Ordinary angular derivatives needed by the closed-loop tracking simulator.
     dotOmega = W1 - rigid_connection_cols(W0, W0, J, Jinv)
     W1dot = W2 - rigid_connection_cols(W0, W1, J, Jinv)
     ddotOmega = (
@@ -749,9 +658,7 @@ def package_rigid_quintic_solution(sol, bc: BoundaryData, N: int, J: np.ndarray,
 
 
 
-# ============================================================
-# 3c) Left-invariant rigid-body metric Riemannian cubics
-# ============================================================
+# Left-invariant rigid-body metric cubics
 
 
 def cubic_coefficients(q0, qT, qd0, qdT, T):
@@ -946,8 +853,6 @@ def package_rigid_cubic_solution(sol, bc: BoundaryData, N: int, J: np.ndarray, J
     W1 = y[6:9]
     W2 = y[9:12]
 
-    # Convert covariant derivatives to ordinary body angular derivatives for
-    # compatibility with the tracking simulator.
     dotOmega = W1 - rigid_connection_cols(W0, W0, J, Jinv)
     W1dot = W2 - rigid_connection_cols(W0, W1, J, Jinv)
     ddotOmega = (
@@ -970,9 +875,7 @@ def package_rigid_cubic_solution(sol, bc: BoundaryData, N: int, J: np.ndarray, J
         "method_family": np.array("rigid-cubic"),
     }
 
-# ============================================================
-# 4) Boundary conditions and solution packaging
-# ============================================================
+# Boundary conditions and solution packaging
 
 
 def solve_sasaki(bc: BoundaryData, nodes: int, tol: float, max_nodes: int, bc_mode: str, verbose: int, initial_sol=None):
@@ -1218,9 +1121,7 @@ def plot_payload(path_prefix: Path, payload: Dict[str, np.ndarray], title: str) 
     plt.close(fig)
 
 
-# ============================================================
-# 5) CLI
-# ============================================================
+# Command-line interface
 
 
 def main():
